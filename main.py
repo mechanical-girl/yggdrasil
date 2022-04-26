@@ -15,5 +15,5 @@ this_bot.send(this_muninn.next_log_request)
 while not this_muninn.complete:
     message = this_bot.parse()
     if message.type == "log-reply":
-        this_muninn.insert(message)
+        this_muninn.insert(message.packet)
         this_bot.send(this_muninn.next_log_request)

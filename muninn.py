@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 from os.path import exists
+from tkinter import E
 
 
 class Muninn:
@@ -9,7 +10,7 @@ class Muninn:
         self.room = room
         self.complete = False
         self.next_log_request = {"type": "log", "data": {"n": 1000}}
-
+        self.last_requested_n = 1000
 
     def check_db(self):
         if not exists(self.DB_PATH):
@@ -22,7 +23,7 @@ class Muninn:
         self.conn = sqlite3.connect(self.DB_PATH)
         self.c = self.conn.cursor()
         # Create the message table
-        self.c.execute("""  CREATE TABLE IF NOT EXISTS message (
+        self.c.execute("""  CREATE TABLE message (
                                 room TEXT,
                                 id TEXT PRIMARY KEY NOT NULL,
                                 parent TEXT,
@@ -39,7 +40,7 @@ class Muninn:
                             )""")
 
         # Create the sender table
-        self.c.execute("""  CREATE TABLE IF NOT EXISTS sender (
+        self.c.execute("""  CREATE TABLE sender (
                                 id TEXT NOT NULL,
                                 server_id TEXT NOT NULL,
                                 server_era TEXT NOT NULL,
@@ -52,13 +53,13 @@ class Muninn:
                             )""")
 
         # Tree index generation
-        self.c.execute("""  CREATE INDEX IF NOT EXISTS message_parent ON message (
+        self.c.execute("""  CREATE INDEX message_parent ON message (
                                 parent,
                                 id
                             )""")
 
         # Index for partial message querying
-        self.c.execute("""  CREATE INDEX IF NOT EXISTS partial_message ON message (
+        self.c.execute("""  CREATE INDEX partial_message ON message (
                                 id,
                                 room,
                                 parent,
@@ -69,17 +70,26 @@ class Muninn:
                                 deleted
                             )""")
 
-    def insert(self, packet, on_conflict="REPLACE", requested_n=1000):
+    def insert(self, packet, replace_old=True, requested_n=1000):
         # Run through the packet and insert all messages into the database
-        if packet.type != "log-reply":
+
+        # Quick sanity check
+        if packet["type"] != "log-reply":
             raise ValueError("Packet type is not a log-reply")
-        
+
+
+        # If there aren't any messages, we can exit early.
+        elif len(packet["data"]["log"]) == 0:
+            self.complete = True
+            return
+
+        # Disable for release
+        print(datetime.utcfromtimestamp(packet["data"]["log"][0]["time"]).strftime('%Y-%m-%d %H:%M'))
 
         message_values = []
         sender_values = []
-        print(datetime.utcfromtimestamp(packet.data.log[0]["time"]).strftime('%Y-%m-%d %H:%M'))
 
-        for message in packet.data.log:
+        for message in packet["data"]["log"]:
             message_values.append((
                 self.room,
                 message["id"],
@@ -107,13 +117,16 @@ class Muninn:
                 ""
             ))
 
-        self.c.executemany(f"""  INSERT or {on_conflict} INTO message VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", message_values)
-        self.c.executemany(f"""  INSERT or {on_conflict} INTO sender VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", sender_values)
-        self.conn.commit()
-
-        self.next_log_request = {"type": "log", "data": {"n": requested_n, "before": message_values[0][1]}}
-
-        if len(message_values) < requested_n:
+        # If fewer messages than advertised are present, we can assume that we're done once these are inserted.
+        if len(message_values) != self.last_requested_n:
             self.complete = True
-        else:
-            self.complete = False
+        self.last_requested_n = requested_n
+
+        try:
+            self.c.executemany(f"""  INSERT OR {'REPLACE' if replace_old else 'ABORT'} INTO message VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", message_values)
+            self.c.executemany(f"""  INSERT OR {'REPLACE' if replace_old else 'ABORT'} INTO sender VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", sender_values)
+        except sqlite3.IntegrityError as e:
+            self.complete = True
+
+        self.conn.commit()
+        self.next_log_request = {"type": "log", "data": {"n": requested_n, "before": message_values[0][1]}}
