@@ -89,7 +89,7 @@ class Muninn:
         message_values = []
         sender_values = []
 
-        for message in packet["data"]["log"]:
+        for message in packet["data"]["log"][::-1]:
             message_values.append((
                 self.room,
                 message["id"],
