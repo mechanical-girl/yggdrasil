@@ -1,7 +1,7 @@
+import pprint
 import sqlite3
 from datetime import datetime
 from os.path import exists
-from tkinter import E
 
 
 class Muninn:
@@ -84,7 +84,7 @@ class Muninn:
             return
 
         # Disable for release
-        print(datetime.utcfromtimestamp(packet["data"]["log"][0]["time"]).strftime('%Y-%m-%d %H:%M'))
+        print(f"Muninn: " + datetime.utcfromtimestamp(packet["data"]["log"][0]["time"]).strftime('%Y-%m-%d %H:%M'))
 
         message_values = []
         sender_values = []
@@ -113,8 +113,8 @@ class Muninn:
                 message["sender"]["session_id"],
                 True if "is_staff" in message["sender"].keys() and message["sender"]["is_staff"] else False,
                 True if "is_manager" in message["sender"].keys()and message["sender"]["is_manager"] else False,
-                "",
-                ""
+                "", # no idea how to get client_address
+                "" # pretty sure heim doesn't give out real_address?
             ))
 
         # If fewer messages than advertised are present, we can assume that we're done once these are inserted.
@@ -129,4 +129,46 @@ class Muninn:
             self.complete = True
 
         self.conn.commit()
-        self.next_log_request = {"type": "log", "data": {"n": requested_n, "before": message_values[0][1]}}
+        self.next_log_request = {"type": "log", "data": {"n": requested_n, "before": message_values[-1][1]}}
+
+class Huginn:
+    def __init__(self, db_location, room):
+        self.DB_PATH = db_location
+        self.room = room
+        self.conn = sqlite3.connect(self.DB_PATH)
+        self.c = self.conn.cursor()
+
+    def insert(self, message):
+        if message["type"] != "send-event":
+            raise ValueError("Packet type is not a send-event")
+
+        message_values = (
+                self.room,
+                message["data"]["id"],
+                message["data"]["parent"] if "parent" in message.keys() else "",
+                message["data"]["edited"],
+                message["data"]["time"],
+                message["data"]["sender"]["name"],
+                message["data"]["sender"]["id"],
+                message["data"]["sender"]["session_id"],
+                message["data"]["content"],
+                "", # encryption_key_id doesn't seem to appear anywhere
+                False if message["data"]["edited"] == "null" else True,
+                False if message["data"]["deleted"] == "null" else True,
+                False if not "truncated" in message.keys() else True
+            )
+
+        sender_values = (
+                message["data"]["sender"]["id"],
+                message["data"]["sender"]["server_id"],
+                message["data"]["sender"]["server_era"],
+                message["data"]["sender"]["session_id"],
+                True if "is_staff" in message["data"]["sender"].keys() and message["data"]["sender"]["is_staff"] else False,
+                True if "is_manager" in message["data"]["sender"].keys()and message["data"]["sender"]["is_manager"] else False,
+                "", # no idea how to get client_address
+                "" # pretty sure heim doesn't give out real_address?
+            )
+
+        self.c.execute("""INSERT INTO message VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", message_values)
+        self.c.execute(f"""INSERT OR IGNORE INTO sender VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", sender_values)
+        self.conn.commit()

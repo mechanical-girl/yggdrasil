@@ -1,19 +1,26 @@
 import karelia
 
-import muninn
+import ravens
 
-this_muninn = muninn.Muninn("muninn.db", "xkcd")
+muninn = ravens.Muninn("logs.db", "xkcd")
+huginn = ravens.Huginn("logs.db", "xkcd")
 try:
-    this_muninn.check_db()
+    muninn.check_db()
 except FileNotFoundError:
-    this_muninn.create_db()
+    muninn.create_db()
 
-this_bot = karelia.bot("muninn", "xkcd")
+this_bot = karelia.bot("ravens", "xkcd")
 this_bot.connect()
-this_bot.send(this_muninn.next_log_request)
+this_bot.send(muninn.next_log_request)
 
-while not this_muninn.complete:
+while not muninn.complete:
     message = this_bot.parse()
     if message.type == "log-reply":
-        this_muninn.insert(message.packet)
-        this_bot.send(this_muninn.next_log_request)
+        muninn.insert(message.packet, replace_old=False)
+        this_bot.send(muninn.next_log_request)
+
+print("Huginn taking over")
+while True:
+    message = this_bot.parse()
+    if message.type == "send-event":
+        huginn.insert(message.packet)

@@ -1,29 +1,35 @@
 # yggdrasil
-Yggdrasil is a series of Python modules for writing bots to interface with euphoria.io
+Yggdrasil is a series of Python modules for writing bots to interface with euphoria.io. It is designed to be bot-library-independent.
 
-## muninn
-Muninn is used for retrieving historical room messages. An example is presented below:
+
+## ravens
+The Ravens are used for the purposes of archiving a room. Muninn ("memory") archives historic messages, while Huginn ("thought") records those received in real time.
+
+### muninn
+Muninn is used for retrieving historical room messages. An example is presented below, using the [Karelia](https://github.com/struandw/karelia) bot library:
 
 ```
 import karelia
 
-import muninn
+import ravens
 
-this_muninn = muninn.Muninn("muninn.db", "xkcd")
+muninn = ravens.Muninn("logs.db", "xkcd")
 try:
-    this_muninn.check_db()
+    muninn.check_db()
 except FileNotFoundError:
-    this_muninn.create_db()
+    muninn.create_db()
 
-this_bot = karelia.bot("muninn", "xkcd")
+this_bot = karelia.bot("ravens", "xkcd")
 this_bot.connect()
-this_bot.send(this_muninn.next_log_request)
+this_bot.send(muninn.next_log_request)
 
-while not this_muninn.complete:
+while not muninn.complete:
     message = this_bot.parse()
     if message.type == "log-reply":
-        this_muninn.insert(message.packet)
-        this_bot.send(this_muninn.next_log_request)
+        muninn.insert(message.packet, replace_old=False)
+        this_bot.send(muninn.next_log_request)
+
+print("Room has been archived!")
 ```
 
 The Muninn workflow is simple:
@@ -35,3 +41,25 @@ The Muninn workflow is simple:
 6. Repeat 4 and 5 as long as required;you can use `this_muninn.complete` as a conditional. This value will be true under the following circumstances:
     - if `replace_old=True`, this value will be True as long as the last log-reply contained the requested number of messages. If this is not the case, it is assumed that the log-reply data were truncated due to the earliest message being contained in it.
     - if `replace_old=False`, this value will be True as long as there were no conflicts on insertion. A conflict on insertion is taken as evidence that the database is now up-to-date, i.e. that the message being processed already exists in the database. 
+
+It is worthwhile to note that using *only* Muninn will fail to capture messages sent during the archival process. For this, we must turn to Huginn.
+
+### Huginn
+Huginn is used for archiving messages being sent in real-time. A bare-bones example is presented below, using the [Karelia](https://github.com/struandw/karelia) bot library:
+
+```
+import karelia
+
+import ravens
+
+huginn = ravens.Huginn("logs.db", "xkcd")
+this_bot = karelia.bot("ravens", "xkcd")
+this_bot.connect()
+
+while True:
+    message = this_bot.parse()
+    if message.type == "send-event":
+        huginn.insert(message.packet)
+```
+
+The Huginn workflow is 0 in fact - even simpler than that of Muninn. However, this comes at a cost - Huginn is not designed to work "stand-alone", but rather to take up where Muninn leaves off. This means that it assumes that the database file given exists and is correct.
