@@ -62,4 +62,4 @@ while True:
         huginn.insert(message.packet)
 ```
 
-The Huginn workflow is 0 in fact - even simpler than that of Muninn. However, this comes at a cost - Huginn is not designed to work "stand-alone", but rather to take up where Muninn leaves off. This means that it assumes that the database file given exists and is correct.
+The Huginn workflow is - in fact - even simpler than that of Muninn. However, this comes at a cost - Huginn is not designed to work "stand-alone", but rather to take up where Muninn leaves off. This means that it assumes that the database file given exists and is correct.
